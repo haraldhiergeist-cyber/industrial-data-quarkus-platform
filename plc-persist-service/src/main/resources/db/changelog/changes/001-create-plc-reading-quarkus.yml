@@ -1,0 +1,83 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-plc-reading-quarkus
+      author: harald
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            - tableExists:
+                tableName: plc_reading
+      changes:
+        - createTable:
+            tableName: plc_reading
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: source
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tag_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: address
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: data_type
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: value_as_string
+                  type: VARCHAR(255)
+              - column:
+                  name: event_time
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quality
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: received_time
+                  type: TIMESTAMP WITH TIME ZONE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: kafka_topic
+                  type: VARCHAR(255)
+              - column:
+                  name: kafka_partition
+                  type: INTEGER
+              - column:
+                  name: kafka_offset
+                  type: BIGINT
+
+  - changeSet:
+      id: 002-add-kafka-message-constraint-quarkus
+      author: harald
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: plc_reading
+        - not:
+            - uniqueConstraintExists:
+                tableName: plc_reading
+                constraintName: uk_kafka_message
+      changes:
+        - addUniqueConstraint:
+            tableName: plc_reading
+            columnNames: kafka_topic,kafka_partition,kafka_offset
+            constraintName: uk_kafka_message

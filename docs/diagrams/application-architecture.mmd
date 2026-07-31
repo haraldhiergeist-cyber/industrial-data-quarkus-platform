@@ -1,0 +1,32 @@
+flowchart TB
+
+    PLC["PLC / Simulator"]
+
+    COL["PLC Collector Service<br/>Quarkus<br/>Quarkus Scheduler and Quarkus Messaging<br/>Apache PLC4X"]
+
+    KAFKA["Apache Kafka"]
+
+    PERSIST["PLC Persist Service"]
+
+    QUERY["PLC Query Service"]
+
+    PG["PostgreSQL<br/>Historical Data"]
+
+    REDIS["Redis<br/>Current State"]
+
+    WS["WebSockets Next / JSON"]
+
+    UI["Angular UI"]
+
+    PLC --> COL
+    COL --> KAFKA
+
+    KAFKA --> PERSIST
+    KAFKA --> QUERY
+
+    PERSIST --> PG
+
+    QUERY --> REDIS
+    QUERY --> WS
+
+    WS --> UI

@@ -1,0 +1,115 @@
+<div class="measurements-page">
+ <div class="page-header">
+  <div>
+    <h1>{{ 'measurements.title' | translate }}</h1>
+    <p class="page-subtitle">
+      {{ 'measurements.subtitle' | translate }}
+    </p>
+  </div>
+</div>
+
+  <div class="toolbar">
+  <div class="toolbar-group">
+    <label for="metric">{{ 'measurements.metric' | translate }}</label>
+   <p-select
+      inputId="metric"
+      [options]="metricOptions"
+      optionLabel="labelKey"
+      optionValue="value"
+      [ngModel]="selectedMetric()"
+      (ngModelChange)="onMetricChange($event)"
+    >
+      <ng-template pTemplate="item" let-option>
+        {{ option.labelKey | translate }}
+      </ng-template>
+
+      <ng-template pTemplate="selectedItem" let-selectedOption>
+        {{ selectedOption?.labelKey | translate }}
+      </ng-template>
+    </p-select>
+  </div>
+
+  <div class="toolbar-group">
+    <label for="timeRange">{{ 'measurements.timeRange' | translate }}</label>
+    <p-select
+      inputId="timeRange"
+      [options]="timeRangeOptions"
+      optionLabel="labelKey"
+      optionValue="value"
+      [ngModel]="selectedRange()"
+      (ngModelChange)="onRangeChange($event)"
+    >
+      <ng-template let-option #item>
+        {{ option.labelKey | translate }}
+      </ng-template>
+
+      <ng-template let-selectedOption #selectedItem>
+        {{ selectedOption?.labelKey | translate }}
+      </ng-template>
+    </p-select>
+  </div>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <span class="stat-label">{{ 'measurements.min' | translate }}</span>
+    <div class="stat-value">
+      {{ stats().min ?? '-' }} {{ metricConfig().unit }}
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <span class="stat-label">{{ 'measurements.max' | translate }}</span>
+    <div class="stat-value">
+      {{ stats().max ?? '-' }} {{ metricConfig().unit }}
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <span class="stat-label">{{ 'measurements.average' | translate }}</span>
+    <div class="stat-value">
+      {{ stats().average ?? '-' }} {{ metricConfig().unit }}
+    </div>
+  </div>
+</div>
+  @if (loading()) {
+    <div class="state-message">{{ 'measurements.loading' | translate }}</div>
+  }
+
+  @if (errorKey()) {
+    <div class="state-message state-error">{{ errorKey() | translate }}</div>
+    @if (errorDetails()) {
+      <pre class="state-message state-error text-left overflow-auto">{{ errorDetails() }}</pre>
+    }
+  }
+
+  @if (!loading() && !errorKey() && history().length > 0) {
+  <div class="chart-toolbar">
+    <div class="chart-hint">
+      {{ 'measurements.chartHint' | translate }}
+    </div>
+
+    <button
+      pButton
+      [label]="'measurements.resetZoom' | translate"
+      icon="pi pi-refresh"
+      (click)="resetZoom()">
+    </button>
+  </div>
+
+    <div class="chart-card">
+      <div class="chart-wrapper">
+        <p-chart
+          #chartRef
+          type="line"
+          [data]="chartData()"
+          [options]="chartOptions()">
+        </p-chart>
+      </div>
+    </div>
+  }
+
+ @if (!loading() && !errorKey() && history().length === 0) {
+  <div class="state-message">{{ 'measurements.noData' | translate }}</div>
+}
+</div>

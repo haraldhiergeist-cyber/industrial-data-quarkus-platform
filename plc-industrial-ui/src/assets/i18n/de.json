@@ -1,0 +1,61 @@
+{
+  "app": {
+    "title": "PLC Industrial UI"
+  },
+  "topbar": {
+    "calendar": "Kalender",
+    "messages": "Nachrichten",
+    "profile": "Profil"
+  },
+  "menu": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "measurements": "Messwerte"
+  },
+  "dashboard": {
+    "title": "PLC Industrial Dashboard",
+    "subtitle": "Live-Daten aus dem plc-query-service",
+    "temperature": "Temperatur",
+    "pressure": "Druck",
+    "level": "Füllstand",
+    "allReadings": "Alle PLC-Messwerte",
+    "quality": {
+    "good": "Gut",
+    "uncertain": "Unsicher",
+    "bad": "Schlecht"
+   },
+    "table": {
+      "tag": "Tag",
+      "value": "Wert",
+      "quality": "Qualität",
+      "timestamp": "Zeitstempel",
+      "source": "Quelle"
+    }
+  },
+  "measurements": {
+    "title": "Messwerte",
+    "subtitle": "Historische Messwerte für Temperatur, Druck und Füllstand.",
+    "metric": "Messgröße",
+    "timeRange": "Zeitraum",
+    "current": "Aktuell",
+    "min": "Minimum",
+    "max": "Maximum",
+    "average": "Durchschnitt",
+    "loadError": "Messwert-Historie konnte nicht geladen werden.",
+    "loading": "Messwert-Historie wird geladen...",
+    "noData": "Keine Messdaten vorhanden.",
+    "chartHint": "Mausrad zum Zoomen • Umschalt + Ziehen zum Verschieben",
+    "resetZoom": "Zoom zurücksetzen"
+  },
+  "timeRange": {
+   "last5Minutes": "Letzte 5 Minuten",
+    "last15Minutes": "Letzte 15 Minuten",
+    "last1Hour": "Letzte 1 Stunde",
+    "last24Hours": "Letzte 24 Stunden"
+  },
+  "metric": {
+    "temperature": "Temperatur",
+    "pressure": "Druck",
+    "level": "Füllstand"
+  }
+}

@@ -1,0 +1,37 @@
+flowchart TB
+
+    DEV["Developer"]
+
+    GIT["GitLab Repository"]
+
+    CI["GitLab CI/CD"]
+
+    HARBOR["Harbor Registry"]
+
+    INFRA["Infrastructure Repository"]
+
+    FLEET["Fleet GitOps"]
+
+    RANCHER["Rancher"]
+
+    K8S["RKE2 Kubernetes"]
+
+    APP["Running Applications"]
+
+    DEV --> GIT
+
+    GIT --> CI
+
+    CI --> HARBOR
+
+    DEV --> INFRA
+
+    INFRA --> FLEET
+
+    HARBOR --> FLEET
+
+    FLEET --> RANCHER
+
+    RANCHER --> K8S
+
+    K8S --> APP

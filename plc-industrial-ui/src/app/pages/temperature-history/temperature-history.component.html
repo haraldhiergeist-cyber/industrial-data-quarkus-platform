@@ -1,0 +1,22 @@
+<h1>Temperature History</h1>
+<div class="chart-toolbar">
+  <div class="chart-hint">
+     Scroll to zoom • Shift + drag to pan
+  </div>
+
+  <button
+    pButton
+    label="Reset Zoom"
+    icon="pi pi-refresh"
+    (click)="resetZoom()">
+  </button>
+</div>
+
+<div class="chart-card">
+  <p-chart
+    #chartRef
+    type="line"
+    [data]="chartData()"
+    [options]="chartOptions">
+  </p-chart>
+</div>

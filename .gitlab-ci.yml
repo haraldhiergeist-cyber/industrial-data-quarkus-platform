@@ -1,0 +1,232 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+
+stages:
+  - test
+  - build
+  - image
+  - update-infra
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "-B --no-transfer-progress"
+  HARBOR_PROJECT: "industrial-quarkus"
+  INFRA_REPO: "gitlab.cluster.lab/harald/industrial-data-platform-quarkus-infra.git"
+  INFRA_BRANCH: "main"
+
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .m2/repository/
+    - plc-industrial-ui/.npm/
+
+.maven-job:
+  image: maven:3.9.16-eclipse-temurin-21
+  before_script:
+    - java -version
+    - mvn -version
+
+.service-test:
+  extends: .maven-job
+  stage: test
+  script:
+    - mvn $MAVEN_CLI_OPTS -pl "$MODULE" -am test
+
+.service-build:
+  extends: .maven-job
+  stage: build
+  script:
+    - mvn $MAVEN_CLI_OPTS -pl "$MODULE" -am package -DskipTests
+  artifacts:
+    paths:
+      - $MODULE/target/quarkus-app/
+    expire_in: 1 day
+
+.service-image:
+  stage: image
+  image: docker:27
+  services:
+    - name: docker:27-dind
+      command: ["--dns=10.10.100.1", "--insecure-registry=harbor.cluster.lab"]
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - getent hosts harbor.cluster.lab
+    - echo "$HARBOR_PASSWORD" | docker login harbor.cluster.lab -u "$HARBOR_USERNAME" --password-stdin
+    - docker build -f "$MODULE/${DOCKERFILE:-Dockerfile}" -t "$IMAGE_NAME:$CI_COMMIT_SHORT_SHA" -t "$IMAGE_NAME:latest" "$MODULE"
+    - docker push "$IMAGE_NAME:$CI_COMMIT_SHORT_SHA"
+    - docker push "$IMAGE_NAME:latest"
+
+.update-infra:
+  stage: update-infra
+  image: alpine:3.22
+  resource_group: industrial-quarkus-infra
+  before_script:
+    - apk add --no-cache git yq
+    - git config --global user.name "gitlab-ci"
+    - git config --global user.email "gitlab-ci@cluster.lab"
+    - git config --global http.sslVerify false
+  script:
+    - git clone --branch "$INFRA_BRANCH" "https://oauth2:${INFRA_REPO_TOKEN}@${INFRA_REPO}" infra
+    - cd infra
+    - export IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
+    - yq -i '(.images[] | select(.name == strenv(IMAGE_NAME)).newTag) = strenv(IMAGE_TAG)' "$INFRA_APP_PATH/kustomization.yaml"
+    - git add "$INFRA_APP_PATH/kustomization.yaml"
+    - |
+      if git diff --cached --quiet; then
+        echo "No infrastructure change required"
+      else
+        git commit -m "$MODULE -> $IMAGE_TAG [skip ci]"
+        git push origin "$INFRA_BRANCH"
+      fi
+
+collector-test:
+  extends: .service-test
+  variables:
+    MODULE: plc-collector-service
+  rules:
+    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+
+collector-build:
+  extends: .service-build
+  variables:
+    MODULE: plc-collector-service
+  rules:
+    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+
+collector-image:
+  extends: .service-image
+  needs:
+    - job: collector-build
+      artifacts: true
+  variables:
+    MODULE: plc-collector-service
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-collector-service
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+
+collector-update-infra:
+  extends: .update-infra
+  needs: [collector-image]
+  variables:
+    MODULE: plc-collector-service
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-collector-service
+    INFRA_APP_PATH: api/plc-collector-service/overlays/dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+
+persist-test:
+  extends: .service-test
+  variables:
+    MODULE: plc-persist-service
+  rules:
+    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+
+persist-build:
+  extends: .service-build
+  variables:
+    MODULE: plc-persist-service
+  rules:
+    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+
+persist-image:
+  extends: .service-image
+  needs:
+    - job: persist-build
+      artifacts: true
+  variables:
+    MODULE: plc-persist-service
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-persist-service
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+
+persist-update-infra:
+  extends: .update-infra
+  needs: [persist-image]
+  variables:
+    MODULE: plc-persist-service
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-persist-service
+    INFRA_APP_PATH: api/plc-persist-service/overlays/dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+
+query-test:
+  extends: .service-test
+  variables:
+    MODULE: plc-query-service
+  rules:
+    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+
+query-build:
+  extends: .service-build
+  variables:
+    MODULE: plc-query-service
+  rules:
+    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+
+query-image:
+  extends: .service-image
+  needs:
+    - job: query-build
+      artifacts: true
+  variables:
+    MODULE: plc-query-service
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-query-service
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+
+query-update-infra:
+  extends: .update-infra
+  needs: [query-image]
+  variables:
+    MODULE: plc-query-service
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-query-service
+    INFRA_APP_PATH: api/plc-query-service/overlays/dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+
+ui-build:
+  stage: build
+  image: node:22-alpine
+  script:
+    - cd plc-industrial-ui
+    - npm ci --cache .npm --prefer-offline
+    - npm run build
+  artifacts:
+    paths:
+      - plc-industrial-ui/dist/
+    expire_in: 1 day
+  rules:
+    - changes: [.gitlab-ci.yml, plc-industrial-ui/**/*]
+
+ui-image:
+  extends: .service-image
+  needs:
+    - job: ui-build
+      artifacts: true
+  variables:
+    MODULE: plc-industrial-ui
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-industrial-ui
+    DOCKERFILE: Dockerfile.ci
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, plc-industrial-ui/**/*]
+
+ui-update-infra:
+  extends: .update-infra
+  needs: [ui-image]
+  variables:
+    MODULE: plc-industrial-ui
+    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-industrial-ui
+    INFRA_APP_PATH: web/plc-industrial-ui/overlays/dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes: [.gitlab-ci.yml, plc-industrial-ui/**/*]

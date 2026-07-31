@@ -1,0 +1,10 @@
+export * from './measurementHistoryController.service';
+import { MeasurementHistoryControllerService } from './measurementHistoryController.service';
+export * from './measurementHistoryController.serviceInterface';
+export * from './plcHistoryController.service';
+import { PlcHistoryControllerService } from './plcHistoryController.service';
+export * from './plcHistoryController.serviceInterface';
+export * from './plcQueryController.service';
+import { PlcQueryControllerService } from './plcQueryController.service';
+export * from './plcQueryController.serviceInterface';
+export const APIS = [MeasurementHistoryControllerService, PlcHistoryControllerService, PlcQueryControllerService];

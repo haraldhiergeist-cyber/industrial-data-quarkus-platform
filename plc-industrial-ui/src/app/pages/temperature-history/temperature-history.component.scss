@@ -1,0 +1,28 @@
+.chart-card {
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: linear-gradient(
+    180deg,
+    rgba(255,255,255,0.04),
+    rgba(255,255,255,0.02)
+  );
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+
+:host ::ng-deep canvas {
+  max-height: 420px;
+}
+
+
+.chart-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.chart-hint {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}

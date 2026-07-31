@@ -1,0 +1,61 @@
+{
+  "app": {
+    "title": "PLC Industrial UI"
+  },
+  "topbar": {
+    "calendar": "Calendar",
+    "messages": "Messages",
+    "profile": "Profile"
+  },
+  "menu": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "measurements": "Measurements"
+  },
+  "dashboard": {
+    "title": "PLC Industrial Dashboard",
+    "subtitle": "Live data from plc-query-service",
+    "temperature": "Temperature",
+    "pressure": "Pressure",
+    "level": "Level",
+    "allReadings": "All PLC Readings",
+   "quality": {
+    "good": "Good",
+    "uncertain": "Uncertain",
+    "bad": "Bad"
+    },
+    "table": {
+      "tag": "Tag",
+      "value": "Value",
+      "quality": "Quality",
+      "timestamp": "Timestamp",
+      "source": "Source"
+    }
+  },
+  "measurements": {
+    "title": "Measurements",
+    "subtitle": "Historical measurements for temperature, pressure and level.",
+    "metric": "Metric",
+    "timeRange": "Time range",
+    "current": "Current",
+    "min": "Min",
+    "max": "Max",
+    "average": "Average",
+    "loading": "Loading measurement history...",
+    "loadError": "Failed to load measurement history.",
+    "noData": "No measurement data available.",
+    "chartHint": "Scroll to zoom • Shift + drag to pan",
+    "resetZoom": "Reset Zoom"
+  },
+  "timeRange": {
+     "last5Minutes": "Last 5 minutes",
+    "last15Minutes": "Last 15 minutes",
+    "last1Hour": "Last 1 hour",
+    "last24Hours": "Last 24 hours"
+  },
+  "metric": {
+    "temperature": "Temperature",
+    "pressure": "Pressure",
+    "level": "Level"
+  }
+}

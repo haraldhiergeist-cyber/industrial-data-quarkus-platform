@@ -1,0 +1,16 @@
+flowchart TB
+
+    HW["Hardware Layer<br/>Compute<br/>Storage<br/>Networking"]
+
+    HV["Infrastructure Layer<br/>Harvester<br/>Virtual Machines<br/>Virtual Networking<br/>DNS / DHCP<br/>TLS"]
+
+    K8S["Container Platform<br/>Rancher<br/>RKE2 Kubernetes"]
+
+    PS["Platform Services<br/>Kafka<br/>Redis<br/>PostgreSQL<br/>Keycloak<br/>Prometheus<br/>Grafana<br/>Loki"]
+
+    APP["Industrial Data Platform<br/>Angular UI<br/>PLC Collector Service<br/>PLC Query Service<br/>PLC Persist Service"]
+
+    HW --> HV
+    HV --> K8S
+    K8S --> PS
+    PS --> APP
