@@ -30,8 +30,7 @@ public class PlcPollingJob {
     @Scheduled(
             identity = "plc-polling",
             every = "${plc.poll-interval:1s}",
-            concurrentExecution = SKIP,
-            description = "Read configured PLC tags and publish them to Kafka")
+            concurrentExecution = SKIP)
     void poll() {
         try {
             for (PlcReader.PlcReading reading : reader.readAll()) {

@@ -9,6 +9,7 @@ import io.smallrye.reactive.messaging.kafka.api.IncomingKafkaRecordMetadata;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.eclipse.microprofile.reactive.messaging.Message;
+import java.util.concurrent.CompletionStage;
 
 @ApplicationScoped
 public class PlcReadingConsumer {
@@ -23,32 +24,53 @@ public class PlcReadingConsumer {
         this.persistenceService = persistenceService;
     }
 
-    @Incoming("plc-readings-in")
-    @Blocking
-    public void consume(Message<PlcReadingEvent> message) {
-        PlcReadingEvent event = message.getPayload();
-        var metadata = message
-                .getMetadata(IncomingKafkaRecordMetadata.class)
-                .orElseThrow(() -> new IllegalStateException("Kafka record metadata is missing"));
+ 
+	@Incoming("plc-readings-in")
+	@Blocking
+	public CompletionStage<Void> consume(Message<PlcReadingEvent> message) {
+		try {
+			PlcReadingEvent event = message.getPayload();
 
-        if (!changeFilter.hasMeaningfulChange(event)) {
-            Log.debugf("Unchanged PLC value skipped: tag=%s, offset=%d", event.tagName(), metadata.getOffset());
-            return;
-        }
+			var metadata = message
+					.getMetadata(IncomingKafkaRecordMetadata.class)
+					.orElseThrow(() ->
+							new IllegalStateException("Kafka record metadata is missing"));
 
-        var result = persistenceService.persist(
-                event,
-                metadata.getTopic(),
-                metadata.getPartition(),
-                metadata.getOffset());
-        changeFilter.remember(event);
+			if (!changeFilter.hasMeaningfulChange(event)) {
+				Log.debugf(
+						"Unchanged PLC value skipped: tag=%s, offset=%d",
+						event.tagName(),
+						metadata.getOffset());
 
-        if (result == PlcReadingPersistenceService.PersistResult.PERSISTED) {
-            Log.infof("PLC reading persisted: topic=%s, partition=%d, offset=%d",
-                    metadata.getTopic(), metadata.getPartition(), metadata.getOffset());
-        } else {
-            Log.infof("Duplicate PLC reading ignored: topic=%s, partition=%d, offset=%d",
-                    metadata.getTopic(), metadata.getPartition(), metadata.getOffset());
-        }
-    }
+				return message.ack();
+			}
+
+			var result = persistenceService.persist(
+					event,
+					metadata.getTopic(),
+					metadata.getPartition(),
+					metadata.getOffset());
+
+			changeFilter.remember(event);
+
+			if (result == PlcReadingPersistenceService.PersistResult.PERSISTED) {
+				Log.infof(
+						"PLC reading persisted: topic=%s, partition=%d, offset=%d",
+						metadata.getTopic(),
+						metadata.getPartition(),
+						metadata.getOffset());
+			} else {
+				Log.infof(
+						"Duplicate PLC reading ignored: topic=%s, partition=%d, offset=%d",
+						metadata.getTopic(),
+						metadata.getPartition(),
+						metadata.getOffset());
+			}
+
+			return message.ack();
+		} catch (Exception exception) {
+			Log.error("Failed to process PLC reading", exception);
+			return message.nack(exception);
+		}
+	}
 }
