@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Industrial Data Platform — Quarkus Edition
 
 A Quarkus implementation of the existing Spring Boot industrial data showcase. It preserves the same end-to-end flow while replacing the backend runtime and framework stack.
