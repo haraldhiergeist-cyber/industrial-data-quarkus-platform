@@ -58,29 +58,6 @@ cache:
       - $MODULE/target/quarkus-app/
     expire_in: 1 day
 
-# Manual one-time capability test. Does not authenticate with or push to Harbor.
-buildkit-smoke:
-  stage: test
-  image:
-    name: moby/buildkit:rootless
-    entrypoint: ['']
-  variables:
-    BUILDKITD_FLAGS: '--oci-worker-no-process-sandbox'
-  script:
-    - |
-      set -eu
-      mkdir -p buildkit-smoke-input buildkit-smoke-output
-      printf 'FROM alpine:3.22\nRUN echo buildkit-ok >/result.txt\n' > buildkit-smoke-input/Dockerfile
-      buildctl-daemonless.sh build \
-        --frontend dockerfile.v0 \
-        --local "context=${CI_PROJECT_DIR}/buildkit-smoke-input" \
-        --local "dockerfile=${CI_PROJECT_DIR}/buildkit-smoke-input" \
-        --output "type=local,dest=${CI_PROJECT_DIR}/buildkit-smoke-output"
-      grep -qx buildkit-ok buildkit-smoke-output/result.txt
-  rules:
-    - when: manual
-      allow_failure: true
-
 # One rootless build job template for all four application images.
 # No Docker-in-Docker, privileged container, or docker.sock mount.
 .image-build:
@@ -262,8 +239,7 @@ persist-update-infra:
         - pom.xml
         - industrial-data-platform-contracts/**/*
         - plc-persist-service/**/*
-      when: manual
-      allow_failure: true
+      when: on_success
 
 query-test:
   extends: .service-test
@@ -315,8 +291,7 @@ query-update-infra:
         - pom.xml
         - industrial-data-platform-contracts/**/*
         - plc-query-service/**/*
-      when: manual
-      allow_failure: true
+      when: on_success
 
 ui-build:
   stage: build
@@ -359,5 +334,4 @@ ui-update-infra:
       changes:
         - .gitlab-ci.yml
         - plc-industrial-ui/**/*
-      when: manual
-      allow_failure: true
+      when: on_success
