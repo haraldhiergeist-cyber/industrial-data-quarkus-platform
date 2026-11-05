@@ -25,7 +25,7 @@ variables:
   MAVEN_CLI_OPTS: '-B --no-transfer-progress'
   HARBOR_PROJECT: 'industrial-quarkus'
   # Set to true in GitLab CI/CD variables only after the BuildKit smoke test.
-  IMAGE_PUSH_ENABLED: 'false'
+  IMAGE_PUSH_ENABLED: 'true'
   INFRA_PROJECT_PATH: 'harald-lab/industrial-data-platform-quarkus-infra'
   INFRA_BRANCH: 'main'
 
