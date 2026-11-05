@@ -4,6 +4,10 @@
 # a TLS-trusted Harbor endpoint, and CI/CD variables HARBOR_HOST,
 # HARBOR_USERNAME, HARBOR_PASSWORD; for GitOps also INFRA_REPO_TOKEN.
 
+default:
+  tags:
+    - kubernetes
+
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
