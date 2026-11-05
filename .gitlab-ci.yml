@@ -1,6 +1,14 @@
+# Sharvester – Quarkus platform CI/CD
+# Maven / Node -> rootless BuildKit -> Harbor -> manual GitOps update
+# Requirements: GitLab Kubernetes runner with rootless user namespace support,
+# a TLS-trusted Harbor endpoint, and CI/CD variables HARBOR_HOST,
+# HARBOR_USERNAME, HARBOR_PASSWORD; for GitOps also INFRA_REPO_TOKEN.
+
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
     - if: '$CI_COMMIT_BRANCH'
 
 stages:
@@ -10,14 +18,15 @@ stages:
   - update-infra
 
 variables:
-  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
-  MAVEN_CLI_OPTS: "-B --no-transfer-progress"
-  HARBOR_PROJECT: "industrial-quarkus"
-  INFRA_REPO: "gitlab.cluster.lab/harald/industrial-data-platform-quarkus-infra.git"
-  INFRA_BRANCH: "main"
+  MAVEN_CLI_OPTS: '-B --no-transfer-progress'
+  HARBOR_PROJECT: 'industrial-quarkus'
+  # Set to true in GitLab CI/CD variables only after the BuildKit smoke test.
+  IMAGE_PUSH_ENABLED: 'false'
+  INFRA_PROJECT_PATH: 'harald-lab/industrial-data-platform-quarkus-infra'
+  INFRA_BRANCH: 'main'
 
 cache:
-  key: "$CI_COMMIT_REF_SLUG"
+  key: 'dependencies-$CI_PROJECT_ID'
   paths:
     - .m2/repository/
     - plc-industrial-ui/.npm/
@@ -25,6 +34,7 @@ cache:
 .maven-job:
   image: maven:3.9.16-eclipse-temurin-21
   before_script:
+    - export MAVEN_OPTS="-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
     - java -version
     - mvn -version
 
@@ -44,42 +54,105 @@ cache:
       - $MODULE/target/quarkus-app/
     expire_in: 1 day
 
-.service-image:
-  stage: image
-  image: docker:27
-  services:
-    - name: docker:27-dind
-      command: ["--dns=10.10.100.1", "--insecure-registry=harbor.cluster.lab"]
+# Manual one-time capability test. Does not authenticate with or push to Harbor.
+buildkit-smoke:
+  stage: test
+  image:
+    name: moby/buildkit:rootless
+    entrypoint: ['']
   variables:
-    DOCKER_TLS_CERTDIR: ""
+    BUILDKITD_FLAGS: '--oci-worker-no-process-sandbox'
   script:
-    - getent hosts harbor.cluster.lab
-    - echo "$HARBOR_PASSWORD" | docker login harbor.cluster.lab -u "$HARBOR_USERNAME" --password-stdin
-    - docker build -f "$MODULE/${DOCKERFILE:-Dockerfile}" -t "$IMAGE_NAME:$CI_COMMIT_SHORT_SHA" -t "$IMAGE_NAME:latest" "$MODULE"
-    - docker push "$IMAGE_NAME:$CI_COMMIT_SHORT_SHA"
-    - docker push "$IMAGE_NAME:latest"
+    - |
+      set -eu
+      mkdir -p buildkit-smoke-input buildkit-smoke-output
+      printf 'FROM alpine:3.22\nRUN echo buildkit-ok >/result.txt\n' > buildkit-smoke-input/Dockerfile
+      buildctl-daemonless.sh build \
+        --frontend dockerfile.v0 \
+        --local "context=${CI_PROJECT_DIR}/buildkit-smoke-input" \
+        --local "dockerfile=${CI_PROJECT_DIR}/buildkit-smoke-input" \
+        --output "type=local,dest=${CI_PROJECT_DIR}/buildkit-smoke-output"
+      grep -qx buildkit-ok buildkit-smoke-output/result.txt
+  rules:
+    - when: manual
+      allow_failure: true
 
+# One rootless build job template for all four application images.
+# No Docker-in-Docker, privileged container, or docker.sock mount.
+.image-build:
+  stage: image
+  image:
+    name: moby/buildkit:rootless
+    entrypoint: ['']
+  variables:
+    BUILDKITD_FLAGS: '--oci-worker-no-process-sandbox'
+    DOCKER_CONFIG: '$CI_PROJECT_DIR/.docker'
+  before_script:
+    - |
+      set -eu
+      : "${HARBOR_HOST:?Set HARBOR_HOST to the TLS-trusted Harbor hostname in GitLab CI/CD variables}"
+      : "${HARBOR_USERNAME:?Set HARBOR_USERNAME in GitLab CI/CD variables}"
+      : "${HARBOR_PASSWORD:?Set HARBOR_PASSWORD in GitLab CI/CD variables}"
+      mkdir -p "$DOCKER_CONFIG"
+      AUTH="$(printf '%s' "${HARBOR_USERNAME}:${HARBOR_PASSWORD}" | base64 | tr -d '\n')"
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$HARBOR_HOST" "$AUTH" > "$DOCKER_CONFIG/config.json"
+      chmod 600 "$DOCKER_CONFIG/config.json"
+      unset AUTH
+  script:
+    - |
+      set -eu
+      IMAGE_NAME="${HARBOR_HOST}/${HARBOR_PROJECT}/${MODULE}"
+      echo "Building and pushing ${IMAGE_NAME}:${CI_COMMIT_SHA}"
+      buildctl-daemonless.sh build \
+        --frontend dockerfile.v0 \
+        --local "context=${CI_PROJECT_DIR}/${MODULE}" \
+        --local "dockerfile=${CI_PROJECT_DIR}/${MODULE}" \
+        --opt "filename=${DOCKERFILE:-Dockerfile}" \
+        --output "type=image,name=${IMAGE_NAME}:${CI_COMMIT_SHA},push=true"
+  after_script:
+    - rm -f "$CI_PROJECT_DIR/.docker/config.json"
+
+# GitOps update is intentionally manual during migration.
+# Project access token: INFRA_REPO_TOKEN, scope write_repository,
+# with permission to push to the target branch in the infra project.
 .update-infra:
   stage: update-infra
   image: alpine:3.22
   resource_group: industrial-quarkus-infra
   before_script:
-    - apk add --no-cache git yq
-    - git config --global user.name "gitlab-ci"
-    - git config --global user.email "gitlab-ci@cluster.lab"
-    - git config --global http.sslVerify false
+    - apk add --no-cache git yq-go ca-certificates
+    - git config --global user.name 'sharvester-gitlab-ci'
+    - git config --global user.email "gitlab-ci@${CI_SERVER_HOST}"
   script:
-    - git clone --branch "$INFRA_BRANCH" "https://oauth2:${INFRA_REPO_TOKEN}@${INFRA_REPO}" infra
-    - cd infra
-    - export IMAGE_TAG="$CI_COMMIT_SHORT_SHA"
-    - yq -i '(.images[] | select(.name == strenv(IMAGE_NAME)).newTag) = strenv(IMAGE_TAG)' "$INFRA_APP_PATH/kustomization.yaml"
-    - git add "$INFRA_APP_PATH/kustomization.yaml"
     - |
+      set -eu
+      : "${INFRA_REPO_TOKEN:?Set INFRA_REPO_TOKEN with write_repository scope}"
+      : "${HARBOR_HOST:?Set HARBOR_HOST in GitLab CI/CD variables}"
+      case "$CI_SERVER_URL" in
+        https://*) ;;
+        *) echo 'HTTPS GitLab URL required for GitOps push' >&2; exit 1 ;;
+      esac
+      INFRA_URL="${CI_SERVER_URL}/${INFRA_PROJECT_PATH}.git"
+      GIT_AUTH="$(printf 'oauth2:%s' "$INFRA_REPO_TOKEN" | base64 | tr -d '\n')"
+      git -c "http.extraHeader=Authorization: Basic ${GIT_AUTH}" \
+        clone --branch "$INFRA_BRANCH" "$INFRA_URL" infra
+      cd infra
+      IMAGE_NAME="${HARBOR_HOST}/${HARBOR_PROJECT}/${MODULE}"
+      IMAGE_TAG="$CI_COMMIT_SHA"
+      export IMAGE_NAME IMAGE_TAG
+      FILE="${INFRA_APP_PATH}/kustomization.yaml"
+      test -f "$FILE" || { echo "Missing $FILE" >&2; exit 1; }
+      yq -e '.images[] | select(.name == strenv(IMAGE_NAME))' "$FILE" >/dev/null || {
+        echo "No matching image name (${IMAGE_NAME}) in ${FILE}. Update Kustomize image names for Sharvester first." >&2
+        exit 1
+      }
+      yq -i '(.images[] | select(.name == strenv(IMAGE_NAME)).newTag) = strenv(IMAGE_TAG)' "$FILE"
+      git add "$FILE"
       if git diff --cached --quiet; then
-        echo "No infrastructure change required"
+        echo 'No GitOps change required'
       else
-        git commit -m "$MODULE -> $IMAGE_TAG [skip ci]"
-        git push origin "$INFRA_BRANCH"
+        git commit -m "${MODULE} -> ${IMAGE_TAG} [skip ci]"
+        git -c "http.extraHeader=Authorization: Basic ${GIT_AUTH}" push origin "$INFRA_BRANCH"
       fi
 
 collector-test:
@@ -87,111 +160,159 @@ collector-test:
   variables:
     MODULE: plc-collector-service
   rules:
-    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+    - changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-collector-service/**/*
 
 collector-build:
   extends: .service-build
   variables:
     MODULE: plc-collector-service
   rules:
-    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+    - changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-collector-service/**/*
 
 collector-image:
-  extends: .service-image
+  extends: .image-build
   needs:
     - job: collector-build
       artifacts: true
   variables:
     MODULE: plc-collector-service
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-collector-service
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-collector-service/**/*
 
 collector-update-infra:
   extends: .update-infra
   needs: [collector-image]
   variables:
     MODULE: plc-collector-service
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-collector-service
     INFRA_APP_PATH: api/plc-collector-service/overlays/dev
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-collector-service/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-collector-service/**/*
+      when: manual
+      allow_failure: true
 
 persist-test:
   extends: .service-test
   variables:
     MODULE: plc-persist-service
   rules:
-    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+    - changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-persist-service/**/*
 
 persist-build:
   extends: .service-build
   variables:
     MODULE: plc-persist-service
   rules:
-    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+    - changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-persist-service/**/*
 
 persist-image:
-  extends: .service-image
+  extends: .image-build
   needs:
     - job: persist-build
       artifacts: true
   variables:
     MODULE: plc-persist-service
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-persist-service
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-persist-service/**/*
 
 persist-update-infra:
   extends: .update-infra
   needs: [persist-image]
   variables:
     MODULE: plc-persist-service
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-persist-service
     INFRA_APP_PATH: api/plc-persist-service/overlays/dev
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-persist-service/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-persist-service/**/*
+      when: manual
+      allow_failure: true
 
 query-test:
   extends: .service-test
   variables:
     MODULE: plc-query-service
   rules:
-    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+    - changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-query-service/**/*
 
 query-build:
   extends: .service-build
   variables:
     MODULE: plc-query-service
   rules:
-    - changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+    - changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-query-service/**/*
 
 query-image:
-  extends: .service-image
+  extends: .image-build
   needs:
     - job: query-build
       artifacts: true
   variables:
     MODULE: plc-query-service
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-query-service
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-query-service/**/*
 
 query-update-infra:
   extends: .update-infra
   needs: [query-image]
   variables:
     MODULE: plc-query-service
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-query-service
     INFRA_APP_PATH: api/plc-query-service/overlays/dev
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, pom.xml, industrial-data-platform-contracts/**/*, plc-query-service/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - pom.xml
+        - industrial-data-platform-contracts/**/*
+        - plc-query-service/**/*
+      when: manual
+      allow_failure: true
 
 ui-build:
   stage: build
@@ -205,28 +326,34 @@ ui-build:
       - plc-industrial-ui/dist/
     expire_in: 1 day
   rules:
-    - changes: [.gitlab-ci.yml, plc-industrial-ui/**/*]
+    - changes:
+        - .gitlab-ci.yml
+        - plc-industrial-ui/**/*
 
 ui-image:
-  extends: .service-image
+  extends: .image-build
   needs:
     - job: ui-build
       artifacts: true
   variables:
     MODULE: plc-industrial-ui
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-industrial-ui
     DOCKERFILE: Dockerfile.ci
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, plc-industrial-ui/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - plc-industrial-ui/**/*
 
 ui-update-infra:
   extends: .update-infra
   needs: [ui-image]
   variables:
     MODULE: plc-industrial-ui
-    IMAGE_NAME: harbor.cluster.lab/$HARBOR_PROJECT/plc-industrial-ui
     INFRA_APP_PATH: web/plc-industrial-ui/overlays/dev
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-      changes: [.gitlab-ci.yml, plc-industrial-ui/**/*]
+    - if: '$CI_COMMIT_BRANCH == "main" && $IMAGE_PUSH_ENABLED == "true"'
+      changes:
+        - .gitlab-ci.yml
+        - plc-industrial-ui/**/*
+      when: manual
+      allow_failure: true
