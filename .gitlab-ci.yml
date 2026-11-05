@@ -186,8 +186,7 @@ collector-update-infra:
         - pom.xml
         - industrial-data-platform-contracts/**/*
         - plc-collector-service/**/*
-      when: manual
-      allow_failure: true
+      when: on_success
 
 persist-test:
   extends: .service-test
